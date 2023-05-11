@@ -1,86 +1,91 @@
-import java.io.*;
 import java.net.*;
+import java.io.*;
 
-public class TCPClient {
-	public static void main(String[] args) {
-	       try {
-	            //InetAddress aHost = InetAddress.getByName(args[0]);
-	            //int aPort = Integer.parseInt(args[1]);
-	            boolean flag;
-	            String serverType = "";
-                    int serverID = 0; 
-                    String [] temp= null; 
-	            //Socket s = new Socket(aHost, aPort);
-	            Socket s = new Socket("localhost", 50000);//Hardcode
-	            DataOutputStream dout = new DataOutputStream(s.getOutputStream());
-		    BufferedReader bin = new BufferedReader(new InputStreamReader(s.getInputStream()));
-	            //DataInputStream din = new DataInputStream(s.getInputStream());
-	            System.out.println("Target IP: " + s.getInetAddress() + " Target Port: "+ s.getPort());
-	            System.out.println("Local IP: " + s.getLocalAddress() + " Local Port: " + s.getLocalPort());
-	            String username = System.getProperty("user.name");
-	          
-	            // Send Message to server
-	            System.out.println("SENT: HELO");
-	            dout.write(("HELO\n").getBytes());
-	            dout.flush();
-	            // receive message from server
-	            String str = (String)bin.readLine();
-	            System.out.println("RCVD: "+ str);
-	            
-	            dout.write(("AUTH "+ username +"\n").getBytes());
-	            dout.flush();
-	            System.out.println("SENT: AUTH Swapnil");
-	            str = (String)bin.readLine();
-	            System.out.println("RCVD: "+ str);
-	            
-	            // Send Message to server
-	            while(!str.equals("NONE")){
-	            dout.write(("REDY\n").getBytes());
-	            dout.flush();
-	            System.out.println("SENT: REDY");
-	            // receive message from server
-	            str = (String)bin.readLine();
-	            System.out.println("RCVD: " + str);
-	            int ncore = Integer.parseInt(str.split(" ")[4]);
-	            int ram = Integer.parseInt(str.split(" ")[5]);
-	            int disk = Integer.parseInt(str.split(" ")[6]);
-                    dout.write(("GETS Capable " + ncore + " " + ram +" " + disk + "\n").getBytes());
-                    dout.flush(); 
-                    dout.write(("OK\n").getBytes());
-                    dout.flush();
-                    str = (String) bin.readLine();
-                    System.out.println("RCVD: " + str);
-                    int xline = Integer.parseInt(str.split(" ")[1]);
-                    dout.write(("OK\n").getBytes());
-                    dout.flush();
-                    flag = true;                
-                    for(int i=0; i < xline; i++){
-                    	str = (String) bin.readLine();
-                    	if(flag == true){
-                    		serverType = (temp[0]);
-                    		serverID = Integer.parseInt(temp[1]);
-                    	}
-                    flag = false;
-                    }
-            	    dout.write(("OK\n").getBytes());
-            	    dout.flush();
+public class TCPClient{
+    Socket s;
+    DataOutputStream outStream;
+    BufferedReader inputStream;
 
-            	    dout.write((String.format("SCHD %d %s %d\n", jobID, serverType, serverID)).getBytes());
-            	    dout.flush();
-            	    System.out.println("RCVD: SCHD");
-            	   }
-	            // Send Message to server
-	            dout.write(("QUIT\n").getBytes());
-	            dout.flush();
-	            System.out.println("SENT: QUIT");
-	            // receive message from server
-	            str = (String)bin.readLine();
-	            System.out.println("RCVD: " + str);
+    String maxType = new String();
+    int noOfServers = 0;
+    String maxRecord = "";
+    String[] maxRecordArray = {"0","0","0","0","0","0","0","0","0","0"};
+    // Constructor
 
-	            bin.close();
-	            dout.close();
-	            s.close();
-	         }
-	         catch(Exception e){System.out.println(e);}
-	  }
+    public DsClient(String address, int port) throws Exception {
+        s = new Socket(address, port);
+        outStream = new DataOutputStream(s.getOutputStream());
+        inputStream = new BufferedReader(new InputStreamReader(s.getInputStream()));
+
+    }
+
+    public static void main(String[] args) throws Exception {
+        DsClient c = new DsClient("127.0.0.1", 50000);
+        c.byClient();
+
+        c.s.close();
+        c.inputStream.close();
+        c.outStream.close();
+    }
+
+    public void byClient() throws Exception {
+        sendMessage("HELO"); //send HELO
+        recieveMessage(); //recieve OK
+        sendMessage("AUTH " + System.getProperty("user.name")); //send AUTH along with the user
+        String currentMessage = recieveMessage(); //recieve OK
+
+        boolean firstLoop = true;
+        int currentServerID = 0;
+        
+        while(currentMessage.contains("NONE") == false) {
+            sendMessage("REDY"); //send REDY
+            currentMessage = recieveMessage(); //recieve a message
+            String[] currentMessageArray = currentMessage.split(" ");
+            if(firstLoop) { //Identify the largest server type; you may do this only once
+                getLargest();
+                firstLoop = false;
+            } 
+            if(currentMessage.contains("JOBN")) { //if the message recieved at step 10 is of type JOBN
+                sendMessage("SCHD " + currentMessageArray[2]+ " " + maxType + " " + currentServerID%noOfServers); //not complete
+                currentMessage = recieveMessage();
+                currentServerID++;
+            }
+        }
+        sendMessage("QUIT");
+        recieveMessage();
+
+    }
+
+    public void getLargest() throws Exception {
+        sendMessage("GETS All"); //send GETS All
+        String dataString = recieveMessage(); // recieve DATA
+        String[] dataArray = dataString.split(" ");
+        int nRecs = Integer.parseInt(dataArray[1]);
+        sendMessage("OK"); //send OK
+
+        for(int i = 0;i<nRecs;i++) {
+            String currentRecord = recieveMessage(); //recieve each record
+            String[] currentRecordArray = currentRecord.split(" ");
+            if((Integer.parseInt(currentRecordArray[4])>Integer.parseInt(maxRecordArray[4]))||(i==0)) { //keep track of largest server type
+                maxRecord = currentRecord;
+                maxRecordArray = currentRecordArray;
+                maxType = maxRecordArray[0];
+                noOfServers = 1;
+            } else {
+                if(currentRecordArray[0].equals(maxRecordArray[0])) {
+                    noOfServers++;
+                }
+            }
+        }
+        sendMessage("OK"); //send OK
+        recieveMessage(); //recieve .
+    }
+
+
+    public void sendMessage(String message) throws Exception {
+        this.outStream.write((message + "\n").getBytes("UTF-8"));
+    }
+    public String recieveMessage() throws Exception {
+        return this.inputStream.readLine();
+    }
 }
